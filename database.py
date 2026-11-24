@@ -75,6 +75,44 @@ def agregar_movimiento(
         return False, f"No se pudo guardar el movimiento: {e}"
 
 
+def agregar_movimientos_lote(registros: list[dict]) -> tuple[bool, str]:
+    """
+    Inserta varios movimientos (p. ej. desde un extracto bancario) por bloques de 500.
+    Cada registro requiere: fecha (date), descripcion, categoria, tipo, valor, metodo_pago.
+    """
+    if not registros:
+        return False, "No hay movimientos seleccionados para importar."
+
+    payloads = []
+    for reg in registros:
+        if reg["tipo"] not in ("Ingreso", "Gasto"):
+            return False, f"Tipo de movimiento inválido: {reg['tipo']}."
+        valor = round(float(reg["valor"]), 2)
+        if valor <= 0:
+            return False, "Hay movimientos con valor menor o igual a cero. Corrígelos antes de importar."
+        payloads.append(
+            {
+                "fecha": reg["fecha"].isoformat(),
+                "descripcion": str(reg["descripcion"]).strip() or "Sin descripción",
+                "categoria": str(reg["categoria"]).strip() or "Otros Gastos",
+                "tipo": reg["tipo"],
+                "valor": valor,
+                "metodo_pago": reg["metodo_pago"],
+            }
+        )
+
+    try:
+        supabase = obtener_cliente_supabase()
+        for inicio in range(0, len(payloads), 500):
+            supabase.table("movimientos").insert(payloads[inicio:inicio + 500]).execute()
+        return True, f"{len(payloads)} movimientos importados correctamente."
+    except Exception as e:
+        return False, (
+            f"No se pudo completar la importación: {e}. "
+            "Revisa el historial antes de reintentar, porque algunos bloques pudieron guardarse."
+        )
+
+
 def actualizar_movimiento(
     mov_id: int,
     fecha_mov: date,

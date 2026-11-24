@@ -20,7 +20,10 @@ from database import (
     obtener_movimientos,
     obtener_presupuestos,
 )
+from estilos import activar_animaciones_js, aplicar_estilos
+from extractos import vista_extractos
 from utils import (
+    METODOS_PAGO,
     exportar_csv,
     exportar_excel,
     formato_cop,
@@ -30,7 +33,7 @@ from utils import (
 )
 
 # ============================================================================
-# CONFIGURACIÓN DE PÁGINA Y ESTILOS RESPONSIVOS (PC, TABLET Y CELULAR)
+# CONFIGURACIÓN DE PÁGINA
 # ============================================================================
 
 LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "logo_finanzas.png")
@@ -39,184 +42,18 @@ st.set_page_config(
     page_title="Finanzas Personales COP",
     page_icon=LOGO_PATH if os.path.exists(LOGO_PATH) else "💰",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
-CUSTOM_CSS = """
-<style>
-    /* Tipografía global más grande y cómoda de leer */
-    html, body, [class*="css"] {
-        font-size: 17px !important;
-        color: #0F172A;
-    }
+aplicar_estilos()
 
-    .block-container {
-        padding-top: 1.2rem;
-        padding-bottom: 3rem;
-        max-width: 1340px;
-    }
-
-    /* Encabezados amplios y claros */
-    h1 {
-        font-size: 2.05rem !important;
-        font-weight: 800 !important;
-        letter-spacing: -0.02em;
-        margin-bottom: 0.25rem !important;
-    }
-    h2 {
-        font-size: 1.5rem !important;
-        font-weight: 700 !important;
-    }
-    h3 {
-        font-size: 1.25rem !important;
-        font-weight: 700 !important;
-    }
-
-    /* Etiquetas, textos de ayuda e inputs más grandes y táctiles */
-    label, .stMarkdown p, .stCaption {
-        font-size: 1.02rem !important;
-    }
-    input, textarea, select, [data-baseweb="select"] > div {
-        font-size: 1.05rem !important;
-        min-height: 46px !important;
-    }
-
-    /* Botones cómodos y táctiles para celular, tablet y PC */
-    .stButton > button, .stDownloadButton > button, [data-testid="stFormSubmitButton"] > button {
-        font-size: 1.04rem !important;
-        font-weight: 600 !important;
-        min-height: 48px !important;
-        border-radius: 12px !important;
-        padding: 0.55rem 1.1rem !important;
-    }
-
-    /* Pestañas (Tabs) grandes y fáciles de tocar */
-    button[data-baseweb="tab"] {
-        font-size: 1.05rem !important;
-        font-weight: 600 !important;
-        padding: 0.7rem 1.1rem !important;
-    }
-
-    /* Métricas nativas ampliadas */
-    [data-testid="stMetricLabel"] {
-        font-size: 1.0rem !important;
-        font-weight: 600 !important;
-        color: #475569 !important;
-    }
-    [data-testid="stMetricValue"] {
-        font-size: 1.55rem !important;
-        font-weight: 800 !important;
-    }
-
-    /* Grid Responsivo para Tarjetas KPI (4 col PC | 2 col Tablet | 1 col Celular) */
-    .kpi-grid {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 1rem;
-        margin-top: 0.5rem;
-        margin-bottom: 1rem;
-    }
-
-    .kpi-card {
-        background-color: #FFFFFF;
-        border-radius: 16px;
-        padding: 1.25rem 1.35rem;
-        border: 1px solid #E2E8F0;
-        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
-    }
-    .kpi-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
-    }
-    .kpi-title {
-        font-size: 0.92rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #64748B;
-        margin-bottom: 0.4rem;
-    }
-    .kpi-value {
-        font-size: 1.72rem;
-        font-weight: 800;
-        line-height: 1.25;
-        word-break: break-word;
-    }
-    .kpi-sub {
-        font-size: 0.9rem;
-        color: #64748B;
-        margin-top: 0.4rem;
-    }
-
-    .border-ingreso { border-left: 6px solid #10B981; }
-    .border-gasto   { border-left: 6px solid #EF4444; }
-    .border-balance { border-left: 6px solid #2563EB; }
-    .border-neutro  { border-left: 6px solid #64748B; }
-
-    .text-ingreso { color: #059669; }
-    .text-gasto   { color: #DC2626; }
-    .text-balance { color: #1D4ED8; }
-    .text-neutro  { color: #0F172A; }
-
-    /* Caja de vista previa de valor monetario */
-    .preview-cop-box {
-        background: linear-gradient(135deg, #EFF6FF 0%, #F8FAFC 100%);
-        border: 1.5px solid #BFDBFE;
-        border-radius: 12px;
-        padding: 0.85rem 1.1rem;
-        margin: 0.4rem 0 0.8rem 0;
-        font-size: 1.15rem;
-        font-weight: 700;
-        color: #1E3A8A;
-    }
-
-    /* Tarjeta de salud financiera */
-    .health-banner {
-        background-color: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-radius: 16px;
-        padding: 1.15rem 1.35rem;
-        margin-bottom: 1rem;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
-    }
-
-    /* TABLET (641px a 1024px): 2 columnas cómodas */
-    @media (max-width: 1024px) {
-        .kpi-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-        .kpi-value {
-            font-size: 1.55rem;
-        }
-    }
-
-    /* CELULAR (hasta 640px): 1 columna ancha y controles táctiles grandes */
-    @media (max-width: 640px) {
-        html, body, [class*="css"] {
-            font-size: 16px !important;
-        }
-        .block-container {
-            padding-top: 0.8rem;
-            padding-left: 0.75rem;
-            padding-right: 0.75rem;
-        }
-        h1 {
-            font-size: 1.65rem !important;
-        }
-        .kpi-grid {
-            grid-template-columns: 1fr;
-            gap: 0.75rem;
-        }
-        .kpi-value {
-            font-size: 1.5rem;
-        }
-    }
-</style>
-"""
-st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-
-METODOS_PAGO = ["Efectivo", "Transferencia", "Tarjeta", "Otro"]
+SECCIONES = [
+    "📊 Dashboard",
+    "🏦 Extractos Bancarios",
+    "📋 Historial",
+    "📈 Estadísticas",
+    "⚙️ Presupuestos y Metas",
+]
 
 
 # ============================================================================
@@ -224,7 +61,7 @@ METODOS_PAGO = ["Efectivo", "Transferencia", "Tarjeta", "Otro"]
 # ============================================================================
 
 def fmt_cop(valor: float | int | None) -> str:
-    """Formatea COP respetando la preferencia elegida por el usuario en sesión."""
+    """Formatea COP respetando la preferencia elegida en la barra lateral."""
     modo = st.session_state.get("modo_decimales", "auto")
     return formato_cop(valor, modo_decimales=modo)
 
@@ -235,13 +72,13 @@ def fmt_cop(valor: float | int | None) -> str:
 
 def render_kpi_grid(tarjetas: list[dict]) -> None:
     """
-    Renderiza tarjetas KPI en un grid CSS adaptable:
-    4 columnas en PC, 2x2 en Tablet, 1 columna en Celular.
+    Renderiza tarjetas KPI en un grid que se adapta solo al ancho:
+    4 en PC, 2 en tablet y 1 en celular. Cada tarjeta entra con un pequeño retraso.
     """
     bloques = []
-    for t in tarjetas:
+    for i, t in enumerate(tarjetas):
         bloques.append(
-            f'<div class="kpi-card border-{t["estilo"]}">'
+            f'<div class="kpi-card border-{t["estilo"]}" style="--i:{i}">'
             f'<div class="kpi-title">{t["titulo"]}</div>'
             f'<div class="kpi-value text-{t["estilo"]}">{t["valor"]}</div>'
             f'<div class="kpi-sub">{t["subtitulo"]}</div>'
@@ -434,7 +271,7 @@ def vista_dashboard(df_movs: pd.DataFrame, df_cats: pd.DataFrame) -> None:
     balance_disponible = total_ingresos - total_gastos
     cantidad_movs = len(df_movs)
 
-    # Tarjetas KPI responsivas (PC 4 col / Tablet 2x2 / Celular 1 col)
+    # Tarjetas KPI responsivas
     render_kpi_grid(
         [
             {
@@ -614,7 +451,7 @@ def vista_dashboard(df_movs: pd.DataFrame, df_cats: pd.DataFrame) -> None:
 
 
 def vista_historial_gestion(df_movs: pd.DataFrame, df_cats: pd.DataFrame) -> None:
-    """Vista 2: Tabla completa con filtros rápidos, búsqueda, edición, eliminación y exportación."""
+    """Vista 3: Tabla completa con filtros rápidos, búsqueda, edición, eliminación y exportación."""
     st.title("📋 Historial y Gestión de Movimientos")
 
     if df_movs.empty:
@@ -858,7 +695,7 @@ def vista_historial_gestion(df_movs: pd.DataFrame, df_cats: pd.DataFrame) -> Non
 
 
 def vista_estadisticas(df_movs: pd.DataFrame) -> None:
-    """Vista 3: Análisis estadístico diario, semanal, mensual, anual, por método de pago y balance."""
+    """Vista 4: Análisis estadístico diario, semanal, mensual, anual, por método de pago y balance."""
     st.title("📈 Estadísticas y Análisis Financiero")
 
     if df_movs.empty:
@@ -1161,7 +998,7 @@ def vista_estadisticas(df_movs: pd.DataFrame) -> None:
 
 
 def vista_presupuestos_categorias(df_movs: pd.DataFrame, df_cats: pd.DataFrame) -> None:
-    """Vista 4: Presupuestos mensuales, Metas de Ahorro (Alcancías), Categorías y Respaldos."""
+    """Vista 5: Presupuestos mensuales, Metas de Ahorro (Alcancías), Categorías y Respaldos."""
     st.title("⚙️ Presupuestos, Metas y Categorías")
 
     tab_pres, tab_metas, tab_cats, tab_backup = st.tabs(
@@ -1436,19 +1273,25 @@ def vista_presupuestos_categorias(df_movs: pd.DataFrame, df_cats: pd.DataFrame) 
 
 
 # ============================================================================
-# PUNTO DE ENTRADA, ENCABEZADO VISUAL Y NAVEGACIÓN MULTI-DISPOSITIVO
+# PUNTO DE ENTRADA, ENCABEZADO Y NAVEGACIÓN EN BARRA LATERAL
 # ============================================================================
 
 def main() -> None:
-    if "modo_decimales" not in st.session_state:
-        st.session_state["modo_decimales"] = "auto"
-
-    # Barra lateral con configuración de visualización
+    # Barra lateral: navegación principal y formato numérico (un solo lugar para cada cosa)
     with st.sidebar:
         if os.path.exists(LOGO_PATH):
             st.image(LOGO_PATH, width=85)
         st.markdown("## Finanzas COP")
         st.caption("Control financiero personal")
+
+        st.divider()
+        st.markdown("### 🧭 Menú")
+        seccion = st.radio(
+            "Sección",
+            options=SECCIONES,
+            label_visibility="collapsed",
+            key="nav_seccion",
+        )
 
         st.divider()
         st.markdown("### 🔢 Formato de decimales")
@@ -1457,58 +1300,34 @@ def main() -> None:
             "siempre": "Siempre 2 decimales ($ 1.500,00)",
             "entero": "Sin decimales ($ 1.500)",
         }
-        st.session_state["modo_decimales"] = st.selectbox(
+        st.selectbox(
             "Visualización de números",
             options=list(opciones_fmt.keys()),
             format_func=lambda k: opciones_fmt[k],
-            index=list(opciones_fmt.keys()).index(st.session_state["modo_decimales"]),
+            key="modo_decimales",
         )
         st.divider()
         st.caption("☁️ Sincronizado con Supabase")
 
-    # Encabezado moderno con logotipo y fecha
-    col_logo, col_head, col_fmt = st.columns([1, 6, 3])
+    # Encabezado con logotipo y fecha
+    col_logo, col_head = st.columns([1, 6])
     with col_logo:
         if os.path.exists(LOGO_PATH):
             st.image(LOGO_PATH, width=72)
     with col_head:
         st.title("Control Financiero Personal")
         st.caption(f"Pesos Colombianos (COP) · Hoy: {hoy_colombia().strftime('%d/%m/%Y')}")
-    with col_fmt:
-        opciones_rapidas_fmt = {
-            "auto": "Decimales: Auto (,00)",
-            "siempre": "Decimales: Siempre (,00)",
-            "entero": "Decimales: Entero",
-        }
-        st.session_state["modo_decimales"] = st.selectbox(
-            "Formato numérico",
-            options=list(opciones_rapidas_fmt.keys()),
-            format_func=lambda k: opciones_rapidas_fmt[k],
-            index=list(opciones_rapidas_fmt.keys()).index(st.session_state["modo_decimales"]),
-            label_visibility="collapsed",
-        )
-
-    # Navegación superior táctil (funciona perfecto en Celular, Tablet y PC sin abrir sidebar)
-    secciones = [
-        "📊 Dashboard",
-        "📋 Historial",
-        "📈 Estadísticas",
-        "⚙️ Presupuestos y Metas",
-    ]
-    seccion = st.radio(
-        "Sección",
-        options=secciones,
-        horizontal=True,
-        label_visibility="collapsed",
-    )
 
     st.divider()
+    activar_animaciones_js()
 
     df_movs = obtener_movimientos()
     df_cats = obtener_categorias()
 
     if seccion == "📊 Dashboard":
         vista_dashboard(df_movs, df_cats)
+    elif seccion == "🏦 Extractos Bancarios":
+        vista_extractos(df_movs, df_cats)
     elif seccion == "📋 Historial":
         vista_historial_gestion(df_movs, df_cats)
     elif seccion == "📈 Estadísticas":
