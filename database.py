@@ -162,15 +162,15 @@ def eliminar_categoria(cat_id: int) -> tuple[bool, str]:
 
 
 # ============================================================================
-# OPERACIONES DE PRESUPUESTOS MENSUALES
+# OPERACIONES DE PRESUPUESTOS MENSUALES Y METAS DE AHORRO
 # ============================================================================
 
 def obtener_presupuestos(mes_anio: str | None = None) -> pd.DataFrame:
-    """Consulta los presupuestos de un mes específico (YYYY-MM) o todos."""
+    """Consulta los presupuestos mensuales (excluyendo metas de ahorro)."""
     columnas = ["id", "mes_anio", "categoria", "monto_limite", "created_at"]
     try:
         supabase = obtener_cliente_supabase()
-        query = supabase.table("presupuestos").select("*")
+        query = supabase.table("presupuestos").select("*").neq("mes_anio", "META")
         if mes_anio:
             query = query.eq("mes_anio", mes_anio)
         respuesta = query.order("mes_anio", desc=True).order("categoria", desc=False).execute()
@@ -203,10 +203,86 @@ def guardar_presupuesto(mes_anio: str, categoria: str, monto_limite: float) -> t
 
 
 def eliminar_presupuesto(pres_id: int) -> tuple[bool, str]:
-    """Elimina un registro de presupuesto por ID."""
+    """Elimina un registro de presupuesto o meta por ID."""
     try:
         supabase = obtener_cliente_supabase()
         supabase.table("presupuestos").delete().eq("id", int(pres_id)).execute()
-        return True, "Presupuesto eliminado."
+        return True, "Registro eliminado."
     except Exception as e:
-        return False, f"No se pudo eliminar el presupuesto: {e}"
+        return False, f"No se pudo eliminar: {e}"
+
+
+def obtener_metas_ahorro() -> pd.DataFrame:
+    """
+    Obtiene las metas de ahorro almacenadas en la tabla presupuestos
+    bajo mes_anio = 'META' con formato 'NombreMeta|MontoActual'.
+    """
+    columnas = ["id", "nombre_meta", "monto_actual", "monto_objetivo"]
+    try:
+        supabase = obtener_cliente_supabase()
+        respuesta = (
+            supabase.table("presupuestos")
+            .select("*")
+            .eq("mes_anio", "META")
+            .order("id", desc=False)
+            .execute()
+        )
+        datos = respuesta.data or []
+        if not datos:
+            return pd.DataFrame(columns=columnas)
+
+        filas = []
+        for item in datos:
+            raw_cat = str(item.get("categoria", "Meta|0"))
+            if "|" in raw_cat:
+                nombre_m, actual_str = raw_cat.rsplit("|", 1)
+                try:
+                    actual_val = float(actual_str)
+                except ValueError:
+                    actual_val = 0.0
+            else:
+                nombre_m = raw_cat
+                actual_val = 0.0
+
+            filas.append(
+                {
+                    "id": item["id"],
+                    "nombre_meta": nombre_m,
+                    "monto_actual": actual_val,
+                    "monto_objetivo": float(item.get("monto_limite", 0.0)),
+                }
+            )
+        return pd.DataFrame(filas)
+    except Exception as e:
+        st.error(f"Error al cargar metas de ahorro: {e}")
+        return pd.DataFrame(columns=columnas)
+
+
+def guardar_meta_ahorro(
+    nombre_meta: str,
+    monto_objetivo: float,
+    monto_actual: float = 0.0,
+    meta_id: int | None = None,
+) -> tuple[bool, str]:
+    """Crea o actualiza una meta de ahorro virtual en Supabase."""
+    nombre_limpio = nombre_meta.strip().replace("|", "-")
+    if not nombre_limpio:
+        return False, "Escribe un nombre para la meta de ahorro."
+    if monto_objetivo <= 0:
+        return False, "El monto objetivo debe ser mayor que $ 0."
+
+    try:
+        supabase = obtener_cliente_supabase()
+        categoria_codificada = f"{nombre_limpio}|{round(float(monto_actual), 2)}"
+        payload = {
+            "mes_anio": "META",
+            "categoria": categoria_codificada,
+            "monto_limite": round(float(monto_objetivo), 2),
+        }
+        if meta_id is not None:
+            supabase.table("presupuestos").update(payload).eq("id", int(meta_id)).execute()
+        else:
+            supabase.table("presupuestos").insert(payload).execute()
+        return True, f"Meta '{nombre_limpio}' guardada correctamente."
+    except Exception as e:
+        return False, f"No se pudo guardar la meta: {e}"
