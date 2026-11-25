@@ -319,24 +319,25 @@ def _detectar_encabezado(df_raw: pd.DataFrame) -> tuple[int, dict]:
     )
 
 
-def _filas_a_movimientos(df_raw: pd.DataFrame, idx_enc: int, mapa: dict, avisos: list[str]) -> pd.DataFrame:
+MODO_SIGNO = "signo"
+MODO_PALABRAS = "palabras"
+
+
+def _filas_a_movimientos(
+    df_raw: pd.DataFrame, idx_enc: int, mapa: dict, avisos: list[str], modo_sin_signo: str = MODO_SIGNO
+) -> pd.DataFrame:
     datos = df_raw.iloc[idx_enc + 1:].reset_index(drop=True)
     con_debcred = "debito" in mapa or "credito" in mapa
 
     montos: list[float | None] = []
-    usa_signo = False
     if con_debcred:
         avisos.append("Clasifiqué los movimientos según las columnas Débito (gasto) y Crédito (ingreso).")
     else:
         montos = [_monto_signado(v) for v in datos.iloc[:, mapa["valor"]].tolist()]
-        usa_signo = any(m is not None and m < 0 for m in montos)
-        if usa_signo:
-            avisos.append("Clasifiqué por signo: valores negativos = gasto, positivos = ingreso.")
+        if modo_sin_signo == MODO_PALABRAS:
+            avisos.append("Clasifiqué cada movimiento por su descripción (palabras clave). Revisa la columna Tipo.")
         else:
-            avisos.append(
-                "El extracto no trae signos ni columna de crédito: clasifiqué cada movimiento "
-                "por su descripción. Revisa la columna Tipo antes de importar."
-            )
+            avisos.append("Clasifiqué por signo: valor negativo (-) = gasto; sin signo = ingreso (consignación).")
 
     registros = []
     for i, fila in datos.iterrows():
@@ -358,10 +359,11 @@ def _filas_a_movimientos(df_raw: pd.DataFrame, idx_enc: int, mapa: dict, avisos:
             signado = montos[i]
             if signado is None:
                 continue
-            if usa_signo:
-                tipo = "Ingreso" if signado > 0 else "Gasto"
-            else:
+            if modo_sin_signo == MODO_PALABRAS:
                 tipo = sugerir_tipo(descripcion)
+            else:
+                # Regla del usuario: con "-" es gasto; cualquier otro monto es ingreso
+                tipo = "Gasto" if signado < 0 else "Ingreso"
             valor = abs(signado)
 
         registros.append(
@@ -446,7 +448,7 @@ def _tabla_desde_pdf(contenido: bytes, avisos: list[str]) -> pd.DataFrame:
     return pd.DataFrame(filas_texto)
 
 
-def leer_extracto(contenido: bytes, nombre: str) -> tuple[pd.DataFrame, list[str]]:
+def leer_extracto(contenido: bytes, nombre: str, modo_sin_signo: str = MODO_SIGNO) -> tuple[pd.DataFrame, list[str]]:
     """
     Lee un extracto bancario (PDF, XLSX, XLS o CSV) y devuelve:
       - DataFrame con columnas: fecha, descripcion, tipo (Ingreso/Gasto), valor, categoria, metodo_pago
@@ -467,7 +469,7 @@ def leer_extracto(contenido: bytes, nombre: str) -> tuple[pd.DataFrame, list[str
 
     df_raw = df_raw.fillna("").astype(str)
     idx_enc, mapa = _detectar_encabezado(df_raw)
-    movs = _filas_a_movimientos(df_raw, idx_enc, mapa, avisos)
+    movs = _filas_a_movimientos(df_raw, idx_enc, mapa, avisos, modo_sin_signo)
     if movs.empty:
         raise ValueError("No encontré movimientos válidos. Revisa que cada fila tenga fecha y valor.")
 

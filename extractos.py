@@ -9,9 +9,15 @@ from utils import METODOS_PAGO, exportar_csv, exportar_excel, formato_cop, hoy_c
 
 
 @st.cache_data(show_spinner="Leyendo el extracto...")
-def _leer_extracto_cacheado(contenido: bytes, nombre: str):
+def _leer_extracto_cacheado(contenido: bytes, nombre: str, modo_sin_signo: str):
     """Cachea la lectura para que cambiar una celda de la tabla no vuelva a leer el archivo."""
-    return leer_extracto(contenido, nombre)
+    return leer_extracto(contenido, nombre, modo_sin_signo)
+
+
+OPCIONES_MODO = {
+    "signo": "Con «-» es gasto; cualquier otro monto es ingreso (recomendado)",
+    "palabras": "Clasificar por palabras clave de la descripción",
+}
 
 
 def _fmt(valor: float) -> str:
@@ -41,6 +47,14 @@ def vista_extractos(df_movs: pd.DataFrame, df_cats: pd.DataFrame) -> None:
         "antes de importar: ningún movimiento se guarda hasta que tú lo confirmes."
     )
 
+    modo = st.radio(
+        "Cómo clasificar los montos del extracto",
+        options=list(OPCIONES_MODO.keys()),
+        format_func=lambda k: OPCIONES_MODO[k],
+        key="modo_sin_signo",
+        help="Aplica a los extractos con una sola columna de valor (sin columnas Débito/Crédito).",
+    )
+
     archivo = st.file_uploader(
         "Selecciona el extracto",
         type=["pdf", "xlsx", "xls", "csv"],
@@ -66,7 +80,7 @@ def vista_extractos(df_movs: pd.DataFrame, df_cats: pd.DataFrame) -> None:
         return
 
     try:
-        df_leido, avisos = _leer_extracto_cacheado(archivo.getvalue(), archivo.name)
+        df_leido, avisos = _leer_extracto_cacheado(archivo.getvalue(), archivo.name, modo)
     except Exception as exc:
         st.error(f"No pude leer el extracto: {exc}")
         return
