@@ -205,9 +205,9 @@ METODOS_KW = [
 
 RE_LINEA_FECHA = re.compile(r"^(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2})\s+(.+)$")
 RE_MONTO = re.compile(
-    r"(?<!\w)(?:\$\s?)?[+-]?"
-    r"(?:\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+[.,]\d{1,2}|\d{3,})"
-    r"(?:\s?(?:DB|CR))?[+-]?(?=\s|$)"
+    r"(?<!\w)\(?(?:\$\s?)?[+\-−–]?\$?\s?[+\-−–]?"
+    r"(?:\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+[.,]\d{1,2}|\d{3,})\)?"
+    r"(?:\s?(?:DB|CR))?[+\-−–]?(?=\s|$)"
 )
 
 
@@ -253,27 +253,44 @@ def _texto_celda(valor) -> str:
     return "" if texto.lower() in ("nan", "none", "nat") else texto
 
 
-def _monto_signado(valor) -> float | None:
+def _analizar_monto(valor) -> tuple[float, dict] | None:
     """
-    Convierte una celda de monto en número con signo.
-    Negativo si lleva '-' (al inicio o al final), paréntesis o 'DB'.
+    Separa una celda de monto en (cantidad positiva, marcas de signo).
+    Reconoce el signo en cualquier posición: '-7.300', '$-7,300.00', '-$ 7.300',
+    '7.300-', '(7.300)', '7.300 DB', '\u22127.300' (menos Unicode).
     Retorna None si la celda no tiene un monto.
     """
     texto = _texto_celda(valor)
     if not texto:
         return None
-    mayus = texto.upper()
-    negativo = (
-        texto.startswith("-")
-        or texto.endswith("-")
-        or texto.startswith("(")
-        or mayus.endswith("DB")
-        or " DB" in mayus
-    )
-    cantidad = abs(parsear_monto_cop(texto.replace("-", "").replace("+", "")))
+    cantidad = abs(parsear_monto_cop(re.sub(r"[-\u2212\u2013+()]", "", texto)))
     if cantidad == 0:
         return None
-    return -cantidad if negativo else cantidad
+    return cantidad, {
+        "menos": any(m in texto for m in "-\u2212\u2013"),
+        "parentesis": "(" in texto and ")" in texto,
+        "db": re.search(r"\bDB\b|DB$", texto.upper()) is not None,
+    }
+
+
+def _es_negativo(marcas: dict, convencion: str) -> bool:
+    """Decide si un monto es negativo (gasto) según la convención elegida por el usuario."""
+    if convencion == "menos":
+        return marcas["menos"]
+    if convencion == "parentesis":
+        return marcas["parentesis"]
+    if convencion == "db_cr":
+        return marcas["db"]
+    negativo = marcas["menos"] or marcas["parentesis"] or marcas["db"]
+    if convencion == "invertido":
+        return not negativo
+    return negativo  # "auto"
+
+
+def _monto_abs(valor) -> float:
+    """Cantidad positiva de una celda (para columnas Débito y Crédito)."""
+    analisis = _analizar_monto(valor)
+    return analisis[0] if analisis else 0.0
 
 
 def _parsear_fecha(valor):
@@ -319,8 +336,17 @@ def _detectar_encabezado(df_raw: pd.DataFrame) -> tuple[int, dict]:
     )
 
 
-MODO_SIGNO = "signo"
 MODO_PALABRAS = "palabras"
+
+# Convenciones de signo que el usuario puede elegir según su banco
+CONVENCIONES_SIGNO = {
+    "auto": "Automático: detecta -, $-, paréntesis y DB",
+    "menos": "Signo menos (-), en cualquier posición: -7.300 o $-7,300.00",
+    "parentesis": "Paréntesis: (7.300) es gasto",
+    "db_cr": "Sufijo DB / CR: 7.300 DB es gasto, 7.300 CR es ingreso",
+    "invertido": "Invertido: lo negativo es ingreso y lo positivo es gasto",
+}
+MODO_SIGNO = "auto"
 
 
 def _filas_a_movimientos(
@@ -329,15 +355,18 @@ def _filas_a_movimientos(
     datos = df_raw.iloc[idx_enc + 1:].reset_index(drop=True)
     con_debcred = "debito" in mapa or "credito" in mapa
 
-    montos: list[float | None] = []
+    analisis: list = []
     if con_debcred:
         avisos.append("Clasifiqué los movimientos según las columnas Débito (gasto) y Crédito (ingreso).")
     else:
-        montos = [_monto_signado(v) for v in datos.iloc[:, mapa["valor"]].tolist()]
+        analisis = [_analizar_monto(v) for v in datos.iloc[:, mapa["valor"]].tolist()]
         if modo_sin_signo == MODO_PALABRAS:
             avisos.append("Clasifiqué cada movimiento por su descripción (palabras clave). Revisa la columna Tipo.")
         else:
-            avisos.append("Clasifiqué por signo: valor negativo (-) = gasto; sin signo = ingreso (consignación).")
+            avisos.append(
+                f"Clasifiqué por signo con la opción «{CONVENCIONES_SIGNO[modo_sin_signo]}». "
+                "Revisa la columna Tipo antes de importar."
+            )
 
     registros = []
     for i, fila in datos.iterrows():
@@ -348,23 +377,23 @@ def _filas_a_movimientos(
         descripcion = " ".join(descripcion.split()) or "Movimiento sin descripción"
 
         if con_debcred:
-            deb = abs(_monto_signado(fila.iloc[mapa["debito"]]) or 0.0) if "debito" in mapa else 0.0
-            cred = abs(_monto_signado(fila.iloc[mapa["credito"]]) or 0.0) if "credito" in mapa else 0.0
+            deb = _monto_abs(fila.iloc[mapa["debito"]]) if "debito" in mapa else 0.0
+            cred = _monto_abs(fila.iloc[mapa["credito"]]) if "credito" in mapa else 0.0
             neto = cred - deb
             if neto == 0:
                 continue
             tipo = "Ingreso" if neto > 0 else "Gasto"
             valor = abs(neto)
         else:
-            signado = montos[i]
-            if signado is None:
+            celda = analisis[i]
+            if celda is None:
                 continue
+            cantidad, marcas = celda
             if modo_sin_signo == MODO_PALABRAS:
                 tipo = sugerir_tipo(descripcion)
             else:
-                # Regla del usuario: con "-" es gasto; cualquier otro monto es ingreso
-                tipo = "Gasto" if signado < 0 else "Ingreso"
-            valor = abs(signado)
+                tipo = "Gasto" if _es_negativo(marcas, modo_sin_signo) else "Ingreso"
+            valor = cantidad
 
         registros.append(
             {"fecha": fecha, "descripcion": descripcion, "tipo": tipo, "valor": round(float(valor), 2)}

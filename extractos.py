@@ -15,8 +15,12 @@ def _leer_extracto_cacheado(contenido: bytes, nombre: str, modo_sin_signo: str):
 
 
 OPCIONES_MODO = {
-    "signo": "Con «-» es gasto; cualquier otro monto es ingreso (recomendado)",
-    "palabras": "Clasificar por palabras clave de la descripción",
+    "auto": "Automático: detecta -, $-, paréntesis y DB (recomendado)",
+    "menos": "Signo menos (-) en cualquier posición: -7.300 o $-7,300.00",
+    "parentesis": "Paréntesis: (7.300) es gasto",
+    "db_cr": "Sufijo DB / CR: 7.300 DB es gasto, 7.300 CR es ingreso",
+    "invertido": "Invertido: lo negativo es ingreso y lo positivo es gasto",
+    "palabras": "Sin signos: clasificar por palabras clave de la descripción",
 }
 
 
@@ -48,11 +52,11 @@ def vista_extractos(df_movs: pd.DataFrame, df_cats: pd.DataFrame) -> None:
     )
 
     modo = st.radio(
-        "Cómo clasificar los montos del extracto",
+        "Cómo se marcan los gastos en tu extracto",
         options=list(OPCIONES_MODO.keys()),
         format_func=lambda k: OPCIONES_MODO[k],
         key="modo_sin_signo",
-        help="Aplica a los extractos con una sola columna de valor (sin columnas Débito/Crédito).",
+        help="Aplica a los extractos con una sola columna de valor. Si tu extracto tiene columnas Débito y Crédito, se usan esas.",
     )
 
     archivo = st.file_uploader(
